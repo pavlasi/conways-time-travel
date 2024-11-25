@@ -11,7 +11,7 @@ OBJDIR := obj
 
 # Extensions
 
-SRCEXT := c
+SRCEXT := cpp
 OBJEXT := o
 
 # Files
@@ -21,13 +21,13 @@ OBJFILES := $(patsubst %.$(SRCEXT), $(OBJDIR)/%.$(OBJEXT), $(SRCFILES))
 
 # Compiler
 
-CC := gcc
+CC := g++
 
 # Flags
 
-CFLAGS 	:= -Wall -Wextra -pedantic
+CFLAGS 	:= -Wall -Wextra -pedantic -std=c++20
 LDFLAGS := $(foreach $D, $(INCDIR), $(wildcard -I$(D)))
-LDLIBS	:= -lkissat -lm
+LDLIBS	:= -lz3
 
 #
 # Build Rules
