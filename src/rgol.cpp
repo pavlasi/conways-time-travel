@@ -371,7 +371,7 @@ namespace rgol {
              */
             if(threads) {
                 ctx.set("parallel.enable", true);
-                ctx.set("threads", threads);
+                ctx.set("parallel.threads.max", threads);
             }
 
             T sol(ctx);

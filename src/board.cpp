@@ -124,7 +124,7 @@ std::pair<bool, bool> Board::launch_tasks(Board& any, Board& min, unsigned wait_
  *  This function computes the previous state of the current board in
  *  Conway's Game of Life.
  *
- *  @wait_time:
+ *  @wait_time: Timeout in seconds.
  *
  *  return:
  *    - `std::optional<Board>`:
