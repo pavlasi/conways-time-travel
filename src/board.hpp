@@ -27,6 +27,8 @@ class Board {
      *  This function computes the previous state of the current board in
      *  Conway's Game of Life.
      *
+     *  @wait_time: Timeout in seconds.
+     *
      *  return:
      *    - `std::optional<Board>`:
      *        - If a valid previous state is found, the function returns a
@@ -36,7 +38,7 @@ class Board {
      *        constraints), the function returns `std::nullopt` to
      *        indicate failure.
      */
-    std::optional<Board> previous_state(std::size_t wait_time = 600) const;
+    std::optional<Board> previous_state(unsigned wait_time = 300) const;
 
     /*
      *  operator>>()
@@ -85,7 +87,38 @@ class Board {
 
     private:
 
-    bool launch_tasks(Board& any, Board& min, std::size_t wait_time) const;
+    /*
+     *  launch_tasks()
+     *
+     *  This function coordinates the execution of two asynchronous solve
+     *  tasks: one to find any solution (`rgol::solve`) and another to
+     *  find the solution with the minimum number of alive cells
+     *  (`rgol::solve_min_alive`).  It allocates available threads to the
+     *  two tasks, waits for their completion within a specified time, and
+     *  returns their results as a pair of booleans.
+     *
+     *  @any: A reference to a Board object where the result of the "any
+     *  solution" task will be stored.  The task uses the `rgol::solve`
+     *  function to find any valid solution.
+     *
+     *  @min: A reference to a Board object where the result of the
+     *  "minimum alive" task will be stored.  The task uses the
+     *  `rgol::solve_min_alive` function to find a solution with the
+     *  fewest live cells.
+     *
+     *  @wait_time: The total time in milliseconds to spend waiting for
+     *  both tasks to complete. The function ensures that the tasks
+     *  collectively do not exceed this time limit.
+     *
+     *  return:
+     *    - A `std::pair<bool, bool>` where:
+     *      - The first `bool` (`a`) indicates whether the "any solution"
+     *      task completed successfully.
+     *
+     *      - The second `bool` (`m`) indicates whether the "minimum
+     *      alive" task completed successfully.
+     */
+    std::pair<bool, bool> launch_tasks(Board& any, Board& min, unsigned wait_time) const;
 
     private:
 

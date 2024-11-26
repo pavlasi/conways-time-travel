@@ -3,8 +3,8 @@
 
 int main() {
 
-    size_t n;
-    size_t m;
+    std::size_t n;
+    std::size_t m;
 
     std::cin >> n >> m;
 

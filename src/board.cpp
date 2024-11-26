@@ -1,9 +1,10 @@
 
 #include <optional>
 #include <unistd.h>
-#include <future>
+#include <chrono>
 
 #include "board.hpp"
+#include "utils.hpp"
 #include "rgol.hpp"
 
 /*
@@ -19,31 +20,102 @@ Board::Board(std::size_t n, std::size_t m) : table(n, m) {}
 /*
  *  launch_tasks()
  *
- *  @any:
- *  @min:
- *  @wait_time:
+ *  This function coordinates the execution of two asynchronous solve
+ *  tasks: one to find any solution (`rgol::solve`) and another to
+ *  find the solution with the minimum number of alive cells
+ *  (`rgol::solve_min_alive`).  It allocates available threads to the
+ *  two tasks, waits for their completion within a specified time, and
+ *  returns their results as a pair of booleans.
+ *
+ *  @any: A reference to a Board object where the result of the "any
+ *  solution" task will be stored.  The task uses the `rgol::solve`
+ *  function to find any valid solution.
+ *
+ *  @min: A reference to a Board object where the result of the
+ *  "minimum alive" task will be stored.  The task uses the
+ *  `rgol::solve_min_alive` function to find a solution with the
+ *  fewest live cells.
+ *
+ *  @wait_time: The total time in milliseconds to spend waiting for
+ *  both tasks to complete. The function ensures that the tasks
+ *  collectively do not exceed this time limit.
  *
  *  return:
- *    -
- *    -
+ *    - A `std::pair<bool, bool>` where:
+ *      - The first indicates whether the "any solution"
+ *      task completed successfully.
+ *
+ *      - The second indicates whether the "minimum
+ *      alive" task completed successfully.
  */
-bool Board::launch_tasks(Board& any, Board& min, std::size_t wait_time) const {
+std::pair<bool, bool> Board::launch_tasks(Board& any, Board& min, unsigned wait_time) const {
 
-    pid_t pid;
-    std::size_t threads;
-    std::atomic<bool> failed(false);
+    int t_max;
+    int t_any;
+    int t_min;
 
-    threads = std::thread::hardware_concurrency();
+    std::pair<bool, bool> ret(false, false);
 
-    std::future<bool> solve_any = std::async(std::launch::async, [&]() {
-        bool ret = rgol::solve(table, any.table, threads/3);
-        if(!ret) {
-            failed.store(true);
+    t_max = std::thread::hardware_concurrency();
+    t_any = std::max<unsigned>(1, t_max/3);
+    t_min = std::max<unsigned>(1, t_max - t_any);
+
+    auto anyfut = utils::launch_future(
+        [&]() {
+            return rgol::solve(
+                table,
+                any.table,
+                wait_time,
+                t_any
+            );
         }
-        return ret;
-    });
+    );
 
-    return true;
+    auto minfut = utils::launch_future(
+        [&]() {
+            return rgol::solve_min_alive(
+                table,
+                min.table,
+                wait_time,
+                t_min
+            );
+        }
+    );
+
+    if(anyfut.has_value() && minfut.has_value()) {
+        /*
+         *  Start the timer and wait for the "any solution" task to
+         *  complete.  This task is prioritized since it is generally
+         *  faster than the "minimum alive" task.
+         */
+        auto start  = std::chrono::steady_clock::now();
+        auto anyopt = utils::wait_future(
+            anyfut.value(), 
+            std::chrono::milliseconds(wait_time)
+        );
+
+        if(anyopt.has_value()) {
+            ret.first = anyopt.value();
+            /*
+             *  If the "any solution" task returns `false` , it means the
+             *  problem is unsatisfiable (UNSAT). In this case, there is no
+             *  valid solution, so the "minimum alive" task is abandoned,
+             *  and we return early with the result.
+             */
+            if(ret.first) {
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - start
+                ).count();
+
+                auto minopt = utils::wait_future(minfut.value(), std::chrono::milliseconds(wait_time > elapsed ? wait_time - elapsed : 0));
+                if(minopt.has_value()) {
+                    ret.second = minopt.value();
+                }
+            }
+        }
+    }
+
+    return ret;
 }
 
 /*
@@ -63,19 +135,29 @@ bool Board::launch_tasks(Board& any, Board& min, std::size_t wait_time) const {
  *        constraints), the function returns `std::nullopt` to
  *        indicate failure.
  */
-std::optional<Board> Board::previous_state(std::size_t wait_time) const {
+std::optional<Board> Board::previous_state(unsigned wait_time) const {
 
     std::size_t n;
     std::size_t m;
 
+    std::pair<bool, bool> status;
+
     n = table.n();
     m = table.m();
 
-    Board any_t0(n, m);
-    Board min_t0(n, m);
+    Board any(n, m);
+    Board min(n, m);
 
+    status = launch_tasks(any, min, 1000 * wait_time);
+    if(!status.first) {
+        return std::nullopt;
+    } else {
+        if(status.second) {
+            return min;
+        }
+    }
 
-    return min_t0;
+    return any;
 }
 
 /*
