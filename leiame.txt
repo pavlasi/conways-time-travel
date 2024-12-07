@@ -13,7 +13,6 @@ no sistema. Não recomendamos a compilação local do `Z3` visto que
 ```bash
 # Debian based
 sudo apt install z3
-
 ```
 
 ## Estratégia
@@ -63,13 +62,14 @@ bool rgol::solve_iter(const Matrix<int>* t1, Matrix<int>& t0, unsigned timeout, 
 }
 ```
 
-À medida que solve_iter() encontra soluções, a restrição sobre o número de
-células vivas no tabuleiro se torna progressivamente mais rigorosa.
-Inicialmente, é calculado um valor inicial para o número de células vivas
-permitido, e esse limite é reduzido de forma incremental a cada iteração. Essa
-redução é implementada através da instrução `sol.add(total <= ctx.int_val(max))`,
-onde max representa o limite superior do número de células vivas permitido no
-estado atual da busca.
+Conforme `solve_iter()` identifica soluções, a restrição sobre o número
+de células vivas no tabuleiro é gradualmente reduzida, tornando-se
+cada vez mais rigorosa. Inicialmente, é determinado um valor inicial
+para o número máximo de células vivas permitido. Em seguida, esse
+limite é decrementado de forma incremental a cada iteração. Essa
+restrição progressiva é aplicada por meio da instrução `sol.add(total
+<= ctx.int_val(max))`, onde `max` define o valor máximo permitido para o
+número de células vivas na etapa atual da busca.
 
 
 ### Utilização da Classe `z3::optimize` para Minimização
