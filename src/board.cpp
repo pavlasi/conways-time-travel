@@ -7,6 +7,8 @@
 #include "utils.hpp"
 #include "rgol.hpp"
 
+#define __unused __attribute__((unused))
+
 /*
  *  Board(n, m)
  *
@@ -50,34 +52,26 @@ Board::Board(std::size_t n, std::size_t m) : table(n, m) {}
  */
 std::pair<bool, bool> Board::launch_tasks(Board& any, Board& min, unsigned wait_time) const {
 
-    int t_max;
-    int t_any;
-    int t_min;
-
     std::pair<bool, bool> ret(false, false);
-
-    t_max = std::thread::hardware_concurrency();
-    t_any = std::max<unsigned>(1, t_max/3);
-    t_min = std::max<unsigned>(1, t_max - t_any);
 
     auto anyfut = utils::launch_future(
         [&]() {
-            return rgol::solve(
+            return rgol::solve_iter(
                 table,
                 any.table,
-                wait_time,
-                t_any
+                wait_time - 200,
+                std::thread::hardware_concurrency() - 1,
+                ret.first
             );
         }
     );
 
     auto minfut = utils::launch_future(
         [&]() {
-            return rgol::solve_min_alive(
+            return rgol::solve(
                 table,
                 min.table,
-                wait_time,
-                t_min
+                wait_time
             );
         }
     );
@@ -89,18 +83,20 @@ std::pair<bool, bool> Board::launch_tasks(Board& any, Board& min, unsigned wait_
          *  faster than the "minimum alive" task.
          */
         auto start  = std::chrono::steady_clock::now();
-        auto anyopt = utils::wait_future(
+        utils::wait_future(
             anyfut.value(), 
             std::chrono::milliseconds(wait_time)
         );
 
-        if(anyopt.has_value()) {
-            ret.first = anyopt.value();
+        if(ret.first) {
+
             /*
-             *  If the "any solution" task returns `false` , it means the
+             *  If the "any solution" task returns `false`, it means the
              *  problem is unsatisfiable (UNSAT). In this case, there is no
              *  valid solution, so the "minimum alive" task is abandoned,
              *  and we return early with the result.
+             *
+             *  (I haven't found a way to kill the async task)
              */
             if(ret.first) {
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(

@@ -34,13 +34,12 @@ class Matrix {
         
         std::size_t i;
 
-        this->_n = n;
-        this->_m = m;
+        _n = n;
+        _m = m;
 
-        this->data = std::make_unique<T*[]>(n);
-
+        data = std::make_unique<T*[]>(n);
         for(i = 0; i < n; i++) {
-            this->data[i] = &this->base[i * m];
+            data[i] = &base[i * m];
         }
     }
 
@@ -153,7 +152,7 @@ class Matrix {
      *      valid bounds of the matrix (i >= _n or j >= _m).
      */
     T& operator()(std::size_t i, std::size_t j) {
-        return this->at(*this, i, j);
+        return at(*this, i, j);
     }
 
     /*
@@ -177,7 +176,7 @@ class Matrix {
      *      valid bounds of the matrix (i >= _n or j >= _m).
      */
     const T& operator()(std::size_t i, std::size_t j) const {
-        return this->at(*this, i, j);
+        return at(*this, i, j);
     }
 
     /*
@@ -189,7 +188,7 @@ class Matrix {
      *    - The number of rows (size_t) in the matrix.
      */
     std::size_t n() const {
-        return this->_n;
+        return _n;
     }
 
     /*
@@ -201,7 +200,7 @@ class Matrix {
      *    - The number of columns (size_t) in the matrix.
      */
     std::size_t m() const {
-        return this->_m;
+        return _m;
     }
 
     private:

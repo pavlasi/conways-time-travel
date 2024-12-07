@@ -10,7 +10,7 @@ int main() {
 
     Board board(n, m);
 
-    std::cin  >> board;
+    std::cin >> board;
     std::cout << board.previous_state() << std::endl;
 
     return 0;

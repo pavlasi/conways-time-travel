@@ -38,7 +38,7 @@ class Board {
      *        constraints), the function returns `std::nullopt` to
      *        indicate failure.
      */
-    std::optional<Board> previous_state(unsigned wait_time = 300) const;
+    std::optional<Board> previous_state(unsigned wait_time = 290) const;
 
     /*
      *  operator>>()

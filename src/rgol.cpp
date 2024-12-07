@@ -1,8 +1,48 @@
 
-#include <type_traits>
+#include <chrono>
 #include <z3++.h>
 
 #include "matrix.hpp"
+
+/*
+ *  time_it()
+ *
+ *  Measures the execution time of a provided code block and adjusts
+ *  the remaining timeout accordingly.
+ *
+ *  @timeout: A reference to an unsigned integer representing the
+ *  remaining timeout in milliseconds. After executing the code block,
+ *  the elapsed time will be subtracted from this timeout. If the
+ *  elapsed time exceeds the current timeout, the timeout is set to
+ *  zero.
+ *
+ *  @code: A code block that is executed and whose execution time is
+ *  measured.  This block can contain any valid C++ statements or
+ *  expressions.
+ *
+ *  Usage Example:
+ *    unsigned timeout = 1000; // 1000 milliseconds
+ *    time_it(timeout, {
+ *        // Code block whose execution time is to be measured
+ *        perform_heavy_computation();
+ *    });
+ *    // After execution, `timeout` is reduced by the time taken to
+ *    // run `perform_heavy_computation()`, or set to zero if
+ *    // exceeded.
+ */
+#define time_it(timeout, code)                                                                  \
+    {                                                                                           \
+        auto start = std::chrono::steady_clock::now();                                          \
+        { code }                                                                                \
+        auto end = std::chrono::steady_clock::now();                                            \
+        auto k   = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();  \
+        if(k < timeout) {                                                                       \
+            timeout -= k;                                                                       \
+        } else {                                                                                \
+            timeout = 0;                                                                        \
+        }                                                                                       \
+    }
+
 
 namespace rgol {
 
@@ -174,44 +214,13 @@ namespace rgol {
                     neigh = neigh_sum(st, ct0, i, j);
                     total = total + z3::ite(ct0(i, j), st.env.one, st.env.zero);
 
-                    /* (ct0[i][j] ∧ (neigh <= 1)) → ¬ct1[i][j] */
+                    /* Game of Life rules */
                     st.solver.add(
-                        z3::implies(
-                            ct0(i, j) && (neigh <= st.env.one), 
-                            ct1(i, j) == st.env.expr_false
-                        )
-                    );
-
-                    /* (ct0[i][j] ∧ (neigh == 2 ∨ neigh == 3)) → ct1[i][j] */
-                    st.solver.add(
-                        z3::implies(
-                            ct0(i, j) && 
-                            (neigh == st.env.two || neigh == st.env.three), 
-                            ct1(i, j) == st.env.expr_true
-                        )
-                    );
-
-                    /* (ct0[i][j] ∧ (neigh >= 4)) → ¬ct1[i][j] */
-                    st.solver.add(
-                        z3::implies(
-                            ct0(i, j) && (neigh >= st.env.four), 
-                            ct1(i, j) == st.env.expr_false
-                        )
-                    );
-
-                    /* (¬ct0[i][j] ∧ (neigh == 3)) → ct1[i][j] */
-                    st.solver.add(
-                        z3::implies(
-                            !ct0(i, j) && (neigh == st.env.three), 
-                            ct1(i, j) == st.env.expr_true
-                        )
-                    );
-
-                    /* (¬ct0[i][j] ∧ (neigh != 3)) → ¬ct1[i][j] */
-                    st.solver.add(
-                        z3::implies(
-                            !ct0(i, j) && (neigh != st.env.three), 
-                            ct1(i, j) == st.env.expr_false
+                        ct1(i, j) == z3::ite(
+                            (neigh == st.env.three) ||
+                            (ct0(i, j) && (neigh == st.env.two)),
+                            st.env.expr_true,
+                            st.env.expr_false
                         )
                     );
                 }
@@ -320,112 +329,60 @@ namespace rgol {
         }
 
         /*
-         *  solve_impl()
+         *  count_ones() -
          *
-         *  A templated function that generalizes the solving process for
-         *  both z3::solver and z3::optimize types. It sets up the Z3
-         *  context, initializes the solver, adds the necessary
-         *  constraints based on the Game of Life rules, and optionally
-         *  minimizes the number of alive cells if using z3::optimize.
+	 *  Counts the number of alive cells in the `ct0` matrix based
+	 *  on the current model provided by the Z3 solver.
          *
-         *  @t1: A constant reference to a `Matrix<int>` representing the
-         *  known state of the Game of Life board at time t1. Each cell in
-         *  the matrix should be either `1` (alive) or `0` (dead).
+	 *  @st: A reference to the `State<T>` object that contains
+	 *  the Z3 context and solver. This state object is used to
+	 *  access the current model from which the values of the
+	 *  symbolic expressions in `ct0` are evaluated.
          *
-         *  @t0: A reference to a `Matrix<int>` that will be populated
-         *  with the computed previous state of the Game of Life board at
-         *  time t0.
-         *
-         *  @timeout: The time limit (in milliseconds) for the solver. If the
-         *  solver exceeds this limit, it terminates and returns no
-         *  solution.
-         *
-         *  @threads: An integer specifying the number of threads to
-         *  enable for the Z3 solver. Setting this allows Z3 to utilize
-         *  multiple CPU cores, potentially improving performance for
-         *  large or complex constraint systems.
+	 *  @ct0: A constant reference to a `Matrix<z3::expr>`
+	 *  representing the symbolic state of the Game of Life board
+	 *  at time t0.
          *
          *  return:
-         *    - `true`: Indicates that a valid previous state (`t0`) was
-         *    found that evolves into the given state (`t1`) under the
-         *    Game of Life rules.
-         *
-         *    - `false`: Indicates that no such previous state exists for
-         *    the provided `t1` state.
+	 *    - A `std::size_t` value representing the total number of
+	 *      cells in `ct0` that are alive in the current model. 
          */
         template <class T>
-        bool solve_impl(const Matrix<int>& t1, Matrix<int>& t0, unsigned timeout, int threads) {
+        static std::size_t count_ones(State<T>& st, const Matrix<z3::expr>& ct0) {
 
-            bool ret;
-
-            z3::config cfg;
-            z3::context ctx(cfg);
-            z3::params params(ctx);
-
-            /*
-             *  Configure the Z3 context for parallel solving if the
-             *  number of threads is specified (threads > 0). This enables
-             *  Z3 to utilize multiple CPU cores for solving, potentially
-             *  improving performance for large or complex constraint
-             *  systems.
-             */
-            if(threads) {
-                ctx.set("parallel.enable", true);
-                ctx.set("parallel.threads.max", threads);
-            }
-
-            T sol(ctx);
-            if(timeout) {
-                params.set("timeout", timeout);
-                sol.set(params);
-            }
-
-
-            Matrix<z3::expr> ct0(t0.n(), t0.m(), ctx);
-            Matrix<z3::expr> ct1(t1.n(), t1.m(), ctx);
-
-            /* Plain-Old Data Type to aggregate the solver attributes */
-            State<T> st = {
-                cfg, 
-                ctx, 
-                sol
-            };
-
-            init_repr(st, t1, ct1, ct0);
-
-            /*
-             *  Depending on whether T is z3::optimize or z3::solver,
-             *  perform different actions:
-             *  
-             *  - If T is z3::optimize, add clauses and define the
-             *    minimization objective to minimize the number of alive
-             *    cells in t0.
-
-             *  - If T is z3::solver, only add clauses without any
-             *    optimization.
-             */
-            if constexpr (std::is_same_v<T, z3::optimize>) {
-                sol.minimize(add_clauses(st, t1, ct1, ct0));
-            } else {
-                (void)add_clauses(st, t1, ct1, ct0);
-            }
-
-            ret = false;
-            if(sol.check() == z3::sat) {
-                fill_t0(st, ct0, t0);
-                ret = true;
-            }
+            std::size_t i;
+            std::size_t j;
+            std::size_t n;
+            std::size_t m;
+            std::size_t sum;
             
-            return ret;
+            n = ct0.n();
+            m = ct0.m();
+
+            z3::model model = st.solver.get_model();
+
+            sum = 0;
+            for(i = 0; i < n; i++) {
+                for(j = 0; j < m; j++) {
+                    z3::expr e = model.eval(ct0(i, j), true);
+                    sum += e.is_true() ? 1 : 0;
+                }
+            }
+
+            return sum;
         }
     }
 
     /*
-     *  solve()
+     *  solve_iter()
      *
      *  Attempts to find any valid previous state (t0) of the Game of
      *  Life board that evolves into the given state (t1) at the next
-     *  time step.
+     *  time step using an iterative deepening approach. This method
+     *  progressively searches for solutions with decreasing numbers
+     *  of alive cells, thereby facilitating the discovery of a state
+     *  with the minimal number of alive cells that satisfies the Game
+     *  of Life rules.
      *
      *  @t1: A constant reference to a `Matrix<int>` representing the
      *  known state of the Game of Life board at time t1. Each cell in
@@ -453,12 +410,58 @@ namespace rgol {
      *    - `false`: Indicates that no such previous state exists for
      *    the provided `t1` state.
      */
-    bool solve(const Matrix<int>& t1, Matrix<int>& t0, unsigned timeout, int threads) {
-        return solve_impl<z3::solver>(t1, t0, timeout, threads);
+    bool solve_iter(const Matrix<int>& t1, Matrix<int>& t0, unsigned timeout, unsigned threads, bool& sat) {
+
+        std::size_t cur;
+        std::size_t max;
+
+        z3::config cfg;
+        z3::context ctx(cfg);
+        z3::solver sol(ctx);
+        z3::params p(ctx);
+
+        p.set("threads", threads);
+
+        Matrix<z3::expr> ct0(t0.n(), t0.m(), ctx);
+        Matrix<z3::expr> ct1(t1.n(), t1.m(), ctx);
+
+        /* Plain-Old Data Type to aggregate the solver attributes */
+        State st = {
+            cfg, 
+            ctx, 
+            sol
+        };
+
+        init_repr(st, t1, ct1, ct0);
+        z3::expr total = add_clauses(st, t1, ct1, ct0);
+
+        sat = false;
+        max = t0.n() * t0.m();
+        for(int i = max; i >= 0 && timeout; i--) {
+            time_it(timeout, 
+                p.set("timeout", timeout);
+                sol.set(p);
+                sol.push(); 
+                sol.add(total <= ctx.int_val(max));
+                if(sol.check() == z3::sat) {
+                    cur = count_ones(st, ct0);
+                    if(cur <= max) {
+                        fill_t0(st, ct0, t0);
+                        max = cur;
+                    }
+                    sat = true;
+                } else {
+                    break;
+                }
+                sol.pop();
+            );
+        }
+
+        return sat;
     }
 
     /*
-     *  solve_min_alive()
+     *  solve()
      *
      *  Attempts to find a minimal previous state (t0) of the Game of
      *  Life board that evolves into the given state (t1) at the next
@@ -479,9 +482,6 @@ namespace rgol {
      *  the solver exceeds this limit, it terminates and returns no
      *  solution.
      *
-         *  @threads: An integer specifying the number of threads to
-     *  enable for the Z3 solver. 
-     *
      *  return:
      *    - `true`: Indicates that a valid previous state (`t0`) was
      *    found that evolves into the given state (`t1`) under the
@@ -490,7 +490,36 @@ namespace rgol {
      *    - `false`: Indicates that no such previous state exists for
      *    the provided `t1` state.
      */
-    bool solve_min_alive(const Matrix<int>& t1, Matrix<int>& t0, unsigned timeout, int threads) {
-        return solve_impl<z3::optimize>(t1, t0, timeout, threads);
+    bool solve(const Matrix<int>& t1, Matrix<int>& t0, unsigned timeout) {
+
+        bool sat;
+
+        z3::config cfg;
+        z3::context ctx(cfg);
+        z3::optimize opt(ctx);
+        z3::params p(ctx);
+
+        p.set("timeout", timeout);
+        opt.set(p);
+
+        Matrix<z3::expr> ct0(t0.n(), t0.m(), ctx);
+        Matrix<z3::expr> ct1(t1.n(), t1.m(), ctx);
+
+        /* Plain-Old Data Type to aggregate the solver attributes */
+        State st = {
+            cfg, 
+            ctx, 
+            opt 
+        };
+
+        sat = false;
+        init_repr(st, t1, ct1, ct0);
+        opt.minimize(add_clauses(st, t1, ct1, ct0));
+        if(opt.check() == z3::sat) {
+            fill_t0(st, ct0, t0);
+            sat = true;
+        }
+
+        return sat;
     }
 }

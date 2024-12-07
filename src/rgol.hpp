@@ -6,11 +6,15 @@
 namespace rgol {
 
     /*
-     *  solve()
+     *  solve_iter()
      *
      *  Attempts to find any valid previous state (t0) of the Game of
      *  Life board that evolves into the given state (t1) at the next
-     *  time step.
+     *  time step using an iterative deepening approach. This method
+     *  progressively searches for solutions with decreasing numbers
+     *  of alive cells, thereby facilitating the discovery of a state
+     *  with the minimal number of alive cells that satisfies the Game
+     *  of Life rules.
      *
      *  @t1: A constant reference to a `Matrix<int>` representing the
      *  known state of the Game of Life board at time t1. Each cell in
@@ -23,6 +27,10 @@ namespace rgol {
      *  pre-initialized with the appropriate dimensions corresponding
      *  to `t1`.
      *
+     *  @timeout: The time limit (in milliseconds) for the solver. If
+     *  the solver exceeds this limit, it terminates and returns no
+     *  solution.
+     *
      *  @threads: An integer specifying the number of threads to
      *  enable for the Z3 solver.
      *
@@ -34,7 +42,7 @@ namespace rgol {
      *    - `false`: Indicates that no such previous state exists for
      *    the provided `t1` state.
      */
-    extern bool solve(const Matrix<int>& t1, Matrix<int>& t0, unsigned timeout = 0, int threads = 0);
+    extern bool solve_iter(const Matrix<int>& t1, Matrix<int>& t0, unsigned timeout, unsigned threads, bool& sat);
 
     /*
      *  solve_min_alive()
@@ -58,9 +66,6 @@ namespace rgol {
      *  the solver exceeds this limit, it terminates and returns no
      *  solution.
      *
-         *  @threads: An integer specifying the number of threads to
-     *  enable for the Z3 solver. 
-     *
      *  return:
      *    - `true`: Indicates that a valid previous state (`t0`) was
      *    found that evolves into the given state (`t1`) under the
@@ -69,7 +74,7 @@ namespace rgol {
      *    - `false`: Indicates that no such previous state exists for
      *    the provided `t1` state.
      */
-    extern bool solve_min_alive(const Matrix<int>& t1, Matrix<int>& t0, unsigned timeout = 0, int threads = 0);
+    extern bool solve(const Matrix<int>& t1, Matrix<int>& t0, unsigned timeout);
 };
 
 #endif  /* RGOL_HPP */
