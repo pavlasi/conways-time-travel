@@ -7,8 +7,6 @@
 #include "utils.hpp"
 #include "rgol.hpp"
 
-#define __unused __attribute__((unused))
-
 /*
  *  Board(n, m)
  *
@@ -141,12 +139,13 @@ std::optional<Board> Board::previous_state(unsigned wait_time) const {
     n = table.n();
     m = table.m();
 
+    Board unsat(n, m);
     Board any(n, m);
     Board min(n, m);
 
     status = launch_tasks(any, min, 1000 * wait_time);
     if(!status.first) {
-        return std::nullopt;
+        return unsat;
     } else {
         if(status.second) {
             return min;
