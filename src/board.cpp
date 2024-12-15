@@ -75,11 +75,6 @@ std::pair<bool, bool> Board::launch_tasks(Board& any, Board& min, unsigned wait_
     );
 
     if(anyfut.has_value() && minfut.has_value()) {
-        /*
-         *  Start the timer and wait for the "any solution" task to
-         *  complete.  This task is prioritized since it is generally
-         *  faster than the "minimum alive" task.
-         */
         auto start  = std::chrono::steady_clock::now();
         utils::wait_future(
             anyfut.value(), 
